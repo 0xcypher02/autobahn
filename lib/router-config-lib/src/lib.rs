@@ -39,6 +39,7 @@ pub struct Config {
     pub openbook_v2: DexConfig,
     pub raydium_cp: DexConfig,
     pub raydium: DexConfig,
+    pub meteora_cp: DexConfig,
     pub saber: DexConfig,
     pub infinity: InfinityConfig,
     pub safety_checks: Option<SafetyCheckConfig>,
