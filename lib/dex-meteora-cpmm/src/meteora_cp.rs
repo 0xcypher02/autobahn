@@ -1,16 +1,11 @@
 use crate::edge::{MeteoraCpEdge, MeteoraCpEdgeIdentifier};
 use crate::meteora_cp_ix_builder;
-// use crate::raydium_cp_ix_builder;
-use anchor_lang::{AccountDeserialize, Discriminator, Id};
-use anchor_spl::token::spl_token::state::AccountState;
-use anchor_spl::token::{spl_token, Token};
-use anchor_spl::token_2022::spl_token_2022;
+use anchor_lang::Discriminator;
+use anchor_spl::token::spl_token;
 use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use meteora_cpmm_cpi::Pool;
-use raydium_cp_swap::program::RaydiumCpSwap;
-use raydium_cp_swap::states::{AmmConfig, PoolState, PoolStatusBitIndex};
 use router_feed_lib::router_rpc_client::{RouterRpcClient, RouterRpcClientTrait};
 use router_lib::dex::{
     AccountProviderView, DexEdge, DexEdgeIdentifier, DexInterface, DexSubscriptionMode,
@@ -27,10 +22,8 @@ use solana_sdk::program_pack::Pack;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::sysvar::SysvarId;
 use std::collections::{HashMap, HashSet};
-use std::str::FromStr;
 use std::sync::Arc;
 use std::u64;
-use tracing::warn;
 
 pub struct MeteoraCpDex {
     pub edges: HashMap<Pubkey, Vec<Arc<dyn DexEdgeIdentifier>>>,
@@ -296,12 +289,12 @@ impl DexInterface for MeteoraCpDex {
 
     fn quote_exact_out(
         &self,
-        id: &Arc<dyn DexEdgeIdentifier>,
-        edge: &Arc<dyn DexEdge>,
-        chain_data: &AccountProviderView,
-        out_amount: u64,
+        _id: &Arc<dyn DexEdgeIdentifier>,
+        _edge: &Arc<dyn DexEdge>,
+        _chain_data: &AccountProviderView,
+        _out_amount: u64,
     ) -> anyhow::Result<Quote> {
-        Err(anyhow::anyhow!("Not implemented"))
+        unreachable!("quote_exact_out not supported");
     }
 }
 
