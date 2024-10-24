@@ -298,6 +298,14 @@ async fn main() -> anyhow::Result<()> {
             true,
             &vec![]
         ),
+        dex::generic::build_dex!(
+            dex_meteora_cpmm::MeteoraCpDex::initialize(&mut router_rpc, HashMap::new()).await?,
+            &mango_data,
+            config.meteora_cp.enabled,
+            config.meteora_cp.add_mango_tokens,
+            config.meteora_cp.take_all_mints,
+            &config.meteora_cp.mints
+        ),
     ]
     .into_iter()
     .flatten()

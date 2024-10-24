@@ -4,13 +4,13 @@ use hexlit::hex;
 generate_cpi_crate!("./idl.json");
 declare_id!("Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB");
 
-pub fn encode_swap(amount_in: u64) -> Vec<u8> {
+pub fn encode_swap(amount_in: u64, min_amount_out: u64) -> Vec<u8> {
     let mut data = Vec::default();
     // NB: SHA256("global:swap").
     data.extend(hex!("f8c69e91e17587c8"));
     instruction::Swap {
         _in_amount: amount_in,
-        _minimum_out_amount: 0,
+        _minimum_out_amount: min_amount_out,
     }
     .serialize(&mut data)
     .unwrap();

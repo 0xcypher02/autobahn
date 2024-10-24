@@ -74,6 +74,7 @@ indexmap = "2.0.0"
 router-lib = { path = "../../lib/router-lib/", version = "0.0.1" }
 dex-orca = { path = "../../lib/dex-orca/", version = "0.0.1" }
 dex-raydium-cp = { path = "../../lib/dex-raydium-cp/", version = "0.0.1" }
+dex-meteora-cpmm = { path = "../../lib/dex-meteora-cpmm/", version = "0.0.1" }
 dex-raydium = { path = "../../lib/dex-raydium/", version = "0.0.1" }
 dex-saber = { path = "../../lib/dex-saber/", version = "0.0.1" }
 dex-infinity = { path = "../../lib/dex-infinity/", version = "0.0.1" }

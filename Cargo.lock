@@ -779,6 +779,7 @@ dependencies = [
  "chrono",
  "clap 3.2.25",
  "dex-infinity",
+ "dex-meteora-cpmm",
  "dex-openbook-v2",
  "dex-orca",
  "dex-raydium",

@@ -1,4 +1,5 @@
 use crate::edge::{MeteoraCpEdge, MeteoraCpEdgeIdentifier};
+use crate::meteora_cp_ix_builder;
 // use crate::raydium_cp_ix_builder;
 use anchor_lang::{AccountDeserialize, Discriminator, Id};
 use anchor_spl::token::spl_token::state::AccountState;
@@ -7,6 +8,7 @@ use anchor_spl::token_2022::spl_token_2022;
 use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
+use meteora_cpmm_cpi::Pool;
 use raydium_cp_swap::program::RaydiumCpSwap;
 use raydium_cp_swap::states::{AmmConfig, PoolState, PoolStatusBitIndex};
 use router_feed_lib::router_rpc_client::{RouterRpcClient, RouterRpcClientTrait};
@@ -32,6 +34,7 @@ use tracing::warn;
 
 pub struct MeteoraCpDex {
     pub edges: HashMap<Pubkey, Vec<Arc<dyn DexEdgeIdentifier>>>,
+    subscription_accounts: HashSet<Pubkey>,
 }
 
 #[async_trait]
@@ -43,8 +46,17 @@ impl DexInterface for MeteoraCpDex {
     where
         Self: Sized,
     {
-        let pools =
-            fetch_meteora_account::<meteora_cpmm_cpi::Pool>(rpc, meteora_cpmm_cpi::id()).await?;
+        let pools: Vec<(Pubkey, Pool)> = fetch_meteora_account(rpc, meteora_cpmm_cpi::id())
+            .await?
+            .into_iter()
+            .filter(|(_, pool)| {
+                pool.enabled
+                    && matches!(
+                        pool.curve_type,
+                        meteora_cpmm_cpi::CurveType::ConstantProduct
+                    )
+            })
+            .collect();
 
         let vaults = rpc
             .get_multiple_accounts(
@@ -75,13 +87,16 @@ impl DexInterface for MeteoraCpDex {
                     }),
                     Arc::new(MeteoraCpEdgeIdentifier {
                         pool: *pool_pk,
-                        a_mint: pool.token_b_mint,
-                        b_mint: pool.token_a_mint,
+                        a_mint: pool.token_a_mint,
+                        b_mint: pool.token_b_mint,
                         is_a_to_b: false,
                     }),
                 )
             })
             .collect_vec();
+
+        let mut subscription_accounts = HashSet::new();
+        subscription_accounts.insert(Clock::id());
 
         let edges_per_pk = {
             let mut map = HashMap::new();
@@ -99,18 +114,26 @@ impl DexInterface for MeteoraCpDex {
                 utils::insert_or_extend(&mut map, pool_pk, &entry);
                 utils::insert_or_extend(&mut map, &pool.a_vault, &entry);
                 utils::insert_or_extend(&mut map, &pool.b_vault, &entry);
+
                 utils::insert_or_extend(&mut map, &a_vault.token_vault, &entry);
+                subscription_accounts.insert(a_vault.token_vault);
                 utils::insert_or_extend(&mut map, &b_vault.token_vault, &entry);
+                subscription_accounts.insert(b_vault.token_vault);
                 utils::insert_or_extend(&mut map, &pool.a_vault_lp, &entry);
+                subscription_accounts.insert(pool.a_vault_lp);
                 utils::insert_or_extend(&mut map, &pool.b_vault_lp, &entry);
+                subscription_accounts.insert(pool.b_vault_lp);
                 utils::insert_or_extend(&mut map, &a_vault.lp_mint, &entry);
+                subscription_accounts.insert(a_vault.lp_mint);
                 utils::insert_or_extend(&mut map, &b_vault.lp_mint, &entry);
+                subscription_accounts.insert(b_vault.lp_mint);
             }
             map
         };
 
         Ok(Arc::new(MeteoraCpDex {
             edges: edges_per_pk,
+            subscription_accounts,
         }))
     }
 
@@ -120,9 +143,9 @@ impl DexInterface for MeteoraCpDex {
 
     fn subscription_mode(&self) -> DexSubscriptionMode {
         DexSubscriptionMode::Mixed(MixedDexSubscription {
-            accounts: Default::default(),
-            programs: HashSet::from([RaydiumCpSwap::id()]),
-            token_accounts_for_owner: HashSet::new(),
+            accounts: self.subscription_accounts.clone(),
+            programs: HashSet::from([meteora_cpmm_cpi::id(), meteora_vault_cpi::id()]),
+            token_accounts_for_owner: Default::default(),
         })
     }
 
@@ -235,7 +258,6 @@ impl DexInterface for MeteoraCpDex {
         if let Some(quote) = edge.quote_exact_in(current_time, in_amount, id.is_a_to_b) {
             return Ok(quote);
         } else {
-            warn!("Failed to get quote from an edge... Was this due to an overflow?");
             return Ok(Quote {
                 in_amount: 0,
                 out_amount: 0,
@@ -254,19 +276,18 @@ impl DexInterface for MeteoraCpDex {
         out_amount: u64,
         max_slippage_bps: i32,
     ) -> anyhow::Result<SwapInstruction> {
-        Err(anyhow::anyhow!("Not implemented"))
-        // let id = id
-        //     .as_any()
-        //     .downcast_ref::<RaydiumCpEdgeIdentifier>()
-        //     .unwrap();
-        // raydium_cp_ix_builder::build_swap_ix(
-        //     id,
-        //     chain_data,
-        //     wallet_pk,
-        //     in_amount,
-        //     out_amount,
-        //     max_slippage_bps,
-        // )
+        let id = id
+            .as_any()
+            .downcast_ref::<MeteoraCpEdgeIdentifier>()
+            .unwrap();
+        meteora_cp_ix_builder::build_swap_ix(
+            id,
+            chain_data,
+            wallet_pk,
+            in_amount,
+            out_amount,
+            max_slippage_bps,
+        )
     }
 
     fn supports_exact_out(&self, _id: &Arc<dyn DexEdgeIdentifier>) -> bool {
@@ -284,14 +305,14 @@ impl DexInterface for MeteoraCpDex {
     }
 }
 
-async fn fetch_meteora_account<T: Discriminator + AccountDeserialize>(
+async fn fetch_meteora_account(
     rpc: &mut RouterRpcClient,
     program_id: Pubkey,
-) -> anyhow::Result<Vec<(Pubkey, T)>> {
+) -> anyhow::Result<Vec<(Pubkey, Pool)>> {
     let config = RpcProgramAccountsConfig {
         filters: Some(vec![RpcFilterType::Memcmp(Memcmp::new_raw_bytes(
             0,
-            T::DISCRIMINATOR.to_vec(),
+            Pool::DISCRIMINATOR.to_vec(),
         ))]),
         account_config: RpcAccountInfoConfig {
             encoding: Some(UiAccountEncoding::Base64),
@@ -308,7 +329,7 @@ async fn fetch_meteora_account<T: Discriminator + AccountDeserialize>(
     let result = snapshot
         .iter()
         .map(|account| {
-            let pool: T = T::try_deserialize(&mut account.data.as_slice()).unwrap();
+            let pool = Pool::deserialize_unchecked(&mut account.data.as_slice()).unwrap();
             (account.pubkey, pool)
         })
         .collect_vec();
